@@ -16,7 +16,7 @@ task-keeper/
 │   ├── models.py            # Task, Tag (다대다)
 │   ├── schemas.py           # 응답/요청 스키마
 │   └── services/
-│       └── task_service.py  # list_tasks() 에 N+1 버그
+│       └── task_service.py  # 할 일 조회·생성 (list_tasks()는 태그 selectinload)
 ├── scripts/
 │   └── seed.py              # 데모 데이터 생성
 ├── tests/
@@ -45,9 +45,9 @@ uv run uvicorn app.main:app --reload
 - `POST /tasks` 할 일 생성. 본문 예: `{"title": "장보기", "tags": ["개인", "쇼핑"]}`
 - `GET /tasks/{id}` 단건 조회
 
-## 알려진 버그: 목록 조회 N+1
+## 해결된 이슈: 목록 조회 N+1 (#1, #2)
 
-`app/services/task_service.py`의 `list_tasks()`는 할 일을 한 번에 조회하지만, 응답을 직렬화할 때 각 할 일의 태그(`task.tags`)를 따로 조회합니다. 할 일이 N개면 태그 조회 쿼리가 N번 더 실행됩니다. 할 일이 늘수록 `GET /tasks`가 느려집니다.
+`app/services/task_service.py`의 `list_tasks()`는 할 일을 한 번에 조회했지만, 응답을 직렬화할 때 각 할 일의 태그(`task.tags`)를 따로 조회했습니다. 할 일이 N개면 태그 조회 쿼리가 N번 더 실행되어, 할 일이 늘수록 `GET /tasks`가 느려졌습니다.
 
 실제 실행되는 쿼리 수를 보려면 echo를 켜고 실행하세요.
 
@@ -55,9 +55,9 @@ uv run uvicorn app.main:app --reload
 SQLALCHEMY_ECHO=1 uv run uvicorn app.main:app
 ```
 
-`GET /tasks`를 호출하면, 할 일 목록 SELECT 한 번 뒤에 태그 SELECT가 할 일 개수만큼 이어지는 것을 콘솔에서 확인할 수 있습니다.
+수정 후에는 `GET /tasks` 호출 시 할 일 목록 SELECT 한 번과 태그 `IN` SELECT 한 번, 총 2회만 실행됩니다. `tests/test_smoke.py`의 `test_list_tasks_avoids_n_plus_one`이 이를 검증합니다.
 
-## 수정 방향
+### 수정 내용
 
 `list_tasks()`의 쿼리에 `selectinload`를 적용해 태그를 한 번에 가져옵니다.
 
