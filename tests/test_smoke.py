@@ -5,18 +5,18 @@ from sqlalchemy.engine import Engine
 
 
 @contextmanager
-def count_select_queries():
+def count_select_queries(engine: Engine):
     selects = []
 
     def listener(conn, cursor, statement, parameters, context, executemany):
         if statement.lstrip().upper().startswith("SELECT"):
             selects.append(statement)
 
-    event.listen(Engine, "before_cursor_execute", listener)
+    event.listen(engine, "before_cursor_execute", listener)
     try:
         yield selects
     finally:
-        event.remove(Engine, "before_cursor_execute", listener)
+        event.remove(engine, "before_cursor_execute", listener)
 
 
 def test_create_and_list(client):
@@ -33,14 +33,14 @@ def test_create_and_list(client):
     assert tasks[0]["tags"]
 
 
-def test_list_tasks_avoids_n_plus_one(client):
+def test_list_tasks_avoids_n_plus_one(client, db_session):
     for i in range(3):
         res = client.post(
             "/tasks", json={"title": f"할 일 {i}", "tags": [f"태그{i}", "공통"]}
         )
         assert res.status_code == 201
 
-    with count_select_queries() as selects:
+    with count_select_queries(db_session.get_bind()) as selects:
         res = client.get("/tasks")
 
     assert res.status_code == 200
